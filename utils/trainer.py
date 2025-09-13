@@ -197,7 +197,7 @@ class Trainer:
                 
                 self._save_checkpoint(epoch, is_best)
 
-            if epoch % 5 == 0 or epoch == self.cfg.epochs:
+            if epoch % 10 == 0 or epoch == self.cfg.epochs:
                 self._visualize_epoch(epoch)
 
             barrier()

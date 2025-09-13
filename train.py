@@ -65,7 +65,7 @@ def main():
         num_workers=cfg.num_workers, pin_memory=True, drop_last=False
     )
     val_loader = DataLoader(
-        val_set, batch_size=1, sampler=val_sampler,
+        val_set, batch_size=cfg.batch_size, sampler=val_sampler,
         num_workers=cfg.num_workers, pin_memory=True, drop_last=False
     )
 
