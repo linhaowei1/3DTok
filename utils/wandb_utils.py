@@ -1,23 +1,15 @@
+# wandb_utils.py
+
 """
 Utility functions for Weights & Biases (wandb) logging.
 """
 
 import wandb
+import torch # Added for type hinting
 
 def init_wandb(project_name, run_name=None, config=None, tags=None, notes=None, offline=False):
     """
     Initializes a new wandb run.
-
-    Args:
-        project_name (str): The name of the wandb project.
-        run_name (str, optional): The name for this specific run. Auto-generated if None.
-        config (dict, optional): A dictionary of hyperparameters to log.
-        tags (list, optional): A list of tags to associate with the run.
-        notes (str, optional): A longer description for the run.
-        offline (bool): If True, run wandb in 'offline' mode.
-
-    Returns:
-        A wandb run object.
     """
     mode = 'offline' if offline else 'online'
     
@@ -31,35 +23,50 @@ def init_wandb(project_name, run_name=None, config=None, tags=None, notes=None, 
     )
     return run
 
-def log_epoch_metrics(run, epoch, train_metrics, val_metrics):
+### REVISED ###
+# Updated function to log more detailed metrics
+def log_epoch_metrics(run, epoch, train_metrics, val_metrics, optimizer: torch.optim.Optimizer):
     """
     Logs training and validation metrics for a given epoch.
 
     Args:
         run: The active wandb run object.
         epoch (int): The current epoch number.
-        train_metrics (dict): A dictionary containing training metrics (e.g., 'recon_loss', 'iou').
-        val_metrics (dict): A dictionary containing validation metrics (e.g., 'recon_loss', 'iou').
+        train_metrics (dict): Dictionary of training metrics.
+        val_metrics (dict): Dictionary of validation metrics.
+        optimizer (torch.optim.Optimizer): The optimizer, to log learning rate.
     """
-    if run:
-        # Prepare a dictionary with metrics to log
-        log_data = {
-            'epoch': epoch,
-            'train/loss': train_metrics.get('recon_loss', float('nan')),
-            'train/iou': train_metrics.get('iou', float('nan')),
-            'val/loss': val_metrics.get('recon_loss', float('nan')),
-            'val/iou': val_metrics.get('iou', float('nan')),
-        }
-        # Log the data to wandb
-        run.log(log_data)
+    if not run:
+        return
+
+    # Prepare a dictionary with all metrics to log
+    log_data = {
+        'epoch': epoch,
+        'learning_rate': optimizer.param_groups[0]['lr'],
+        
+        # Training metrics
+        'train/loss': train_metrics.get('loss'),
+        'train/reconstruction_loss': train_metrics.get('reconstruction_loss'),
+        'train/commitment_loss': train_metrics.get('commitment_loss'),
+        'train/grad_norm': train_metrics.get('grad_norm'),
+        
+        # Validation metrics
+        'val/loss': val_metrics.get('loss'),
+        'val/reconstruction_loss': val_metrics.get('reconstruction_loss'),
+        'val/commitment_loss': val_metrics.get('commitment_loss'),
+        'val/iou': val_metrics.get('iou'),
+    }
+
+    # Filter out any None values in case a metric is missing
+    log_data = {k: v for k, v in log_data.items() if v is not None}
+    
+    # Log the data to wandb
+    run.log(log_data)
 
 
 def finish_wandb(run):
     """
     Finishes the active wandb run.
-
-    Args:
-        run: The active wandb run object.
     """
     if run:
         run.finish()

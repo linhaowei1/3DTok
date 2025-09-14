@@ -128,7 +128,7 @@ class VQModel3D(nn.Module):
         self.total_codebook_size = n_embed + 1 if self.use_replacement else n_embed
         self.replacement_idx = 0 if self.use_replacement else -1
         if self.use_replacement:
-            self.replacement_token = nn.Parameter(torch.randn(1, embed_dim))
+            self.replacement_token = nn.Parameter(torch.randn(1, embed_dim) * 0.02)
 
         downsample_factor = 2**(len(ddconfig['ch_mult']) - 1)
         latent_res = ddconfig['resolution'] // downsample_factor
@@ -180,43 +180,48 @@ class VQModel3D(nn.Module):
     def encode(self, x: torch.Tensor):
         h = self.encoder(x)
         h = self.quant_conv(h)
-        seq, dhw = self._flatten_spatial(h)
-        
+        seq, dhw = self._flatten_spatial(h)           # (B, N, C) with channel_last=True expectation
+
         if not self.use_replacement:
-            quant_seq, indices, commit_loss_out = self.quantize(seq)
-            commit_loss = commit_loss_out.mean()
-            quant = self._unflatten_spatial(quant_seq, dhw)
+            # ---  FP32 VQ ---
+            with torch.amp.autocast('cuda', enabled=False):
+                quant_seq, indices, commit_loss_out = self.quantize(seq.float())
+                commit_loss = commit_loss_out.mean()
+            quant = self._unflatten_spatial(quant_seq.to(h.dtype), dhw)
             return quant, commit_loss, indices
 
         d_latent, _, _ = dhw
         patch_size = x.shape[-3] // d_latent
         zero_mask_flat = zero_patch_mask_3d(x, patch_size=patch_size).view(x.shape[0], -1)
+        nonzero_mask_flat = ~zero_mask_flat
+        non_mask_frac = nonzero_mask_flat.float().mean()
 
-        if not torch.any(zero_mask_flat):
-            quant_seq, indices, commit_loss_out = self.quantize(seq)
-            commit_loss = commit_loss_out.mean()
-            quant = self._unflatten_spatial(quant_seq, dhw)
-            return quant, commit_loss, indices + 1
+        if non_mask_frac == 0:
+            full_indices = torch.full((seq.shape[0], seq.shape[1]),
+                                    self.replacement_idx, dtype=torch.long, device=seq.device)
+            full_codebook = self._get_full_codebook()
+            with torch.amp.autocast('cuda', enabled=False):
+                quant_seq = F.embedding(full_indices, full_codebook).float()
+            quant = self._unflatten_spatial(quant_seq.to(h.dtype), dhw)
+            commit_loss = seq.new_zeros(())
+            return quant, commit_loss, full_indices
 
-        seq_nonzero = seq[~zero_mask_flat].view(-1, self.embed_dim)
-        quant_seq_nonzero, indices_nonzero, commit_loss_out = self.quantize(seq_nonzero)
-        
-        full_indices = torch.full(
-            (seq.shape[0], seq.shape[1]), 
-            self.replacement_idx, 
-            dtype=torch.long, 
-            device=seq.device
-        )
-        full_indices[~zero_mask_flat] = indices_nonzero + 1
+        with torch.amp.autocast('cuda', enabled=False):
+            seq_nonzero = seq[nonzero_mask_flat].float().view(-1, self.embed_dim)
+            quant_seq_nonzero, indices_nonzero, commit_loss_out = self.quantize(seq_nonzero)
+            commit_loss = commit_loss_out.mean() * non_mask_frac
+
+        full_indices = torch.full((seq.shape[0], seq.shape[1]),
+                                self.replacement_idx, dtype=torch.long, device=seq.device)
+        full_indices[nonzero_mask_flat] = indices_nonzero + 1
 
         full_codebook = self._get_full_codebook()
-        quant_seq = F.embedding(full_indices, full_codebook)
+        with torch.amp.autocast('cuda', enabled=False):
+            quant_seq = F.embedding(full_indices, full_codebook).float()
 
-        non_mask_frac = (~zero_mask_flat).float().mean()
-        commit_loss = commit_loss_out.mean() * non_mask_frac
-        
-        quant = self._unflatten_spatial(quant_seq, dhw)
+        quant = self._unflatten_spatial(quant_seq.to(h.dtype), dhw)
         return quant, commit_loss, full_indices
+
 
     def decode(self, quant: torch.Tensor):
         quant = quant + self.pos_embedding
@@ -251,7 +256,7 @@ class VQModel3D(nn.Module):
         
         # --- Stage 2: Autoencoding on Multichannel Data ---
         quant, commit_loss, indices = self.encode(multichannel_data)
-        multichannel_recon = self.decode(quant) # This is expected to be logits
+        multichannel_recon = self.decode(quant).float() # This is expected to be logits
         
         return multichannel_recon, multichannel_data, commit_loss, indices
 

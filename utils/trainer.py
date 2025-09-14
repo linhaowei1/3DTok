@@ -12,6 +12,17 @@ from configs.config import TrainConfig
 from model.model import multichannel_to_boolean
 from utils.visualizer import visualize_reconstructions
 
+### ADDED ###
+# Helper function to compute gradient norm
+def get_grad_norm(parameters, norm_type=2.0):
+    """Computes the total norm of the gradients of parameters."""
+    parameters = [p for p in parameters if p.grad is not None]
+    if not parameters:
+        return torch.tensor(0.)
+    device = parameters[0].grad.device
+    total_norm = torch.norm(torch.stack([torch.norm(p.grad.detach(), norm_type).to(device) for p in parameters]), norm_type)
+    return total_norm
+
 class Trainer:
     def __init__(self, model, optimizer, scaler, train_loader, val_loader, 
                  train_sampler, val_sampler, cfg: TrainConfig, device, 
@@ -76,9 +87,11 @@ class Trainer:
 
     def _train_one_epoch(self, epoch):
         self.model.train()
-        running_metrics = torch.zeros(3, device=self.device)  # [loss, rec_loss, commit_loss]
+        ### REVISED ###
+        # Added grad_norm to tracked metrics
+        running_metrics = torch.zeros(4, device=self.device) # [loss, rec_loss, commit_loss, grad_norm]
+        grad_norm_steps = 0
 
-        # Setup progress bar for the main process
         data_iterator = self.train_loader
         if is_main_process():
             data_iterator = tqdm(data_iterator, desc=f"Epoch {epoch} Training")
@@ -90,36 +103,69 @@ class Trainer:
 
             with torch.amp.autocast('cuda', enabled=self.cfg.amp):
                 recon, target, commit_loss, _ = self.model(x)
-                rec_loss = self.rec_loss_fn(recon, target)
+                rec_loss = self.rec_loss_fn(recon.float(), target.float())
+                
+                if torch.isnan(recon).any():
+                    print("!!! NaN detected in model reconstruction output !!!")
+                    raise SystemExit("Stopping training due to NaN in model output.")
+
                 loss = rec_loss + self.cfg.beta_commit * commit_loss
             
+            if torch.isnan(loss):
+                print(f"!!! NaN loss detected! rec_loss: {rec_loss.item()}, commit_loss: {commit_loss.item()} !!!")
+                raise SystemExit("Stopping training due to NaN loss.")
+
             self.scaler.scale(loss / self.cfg.grad_accum).backward()
 
             if (i + 1) % self.cfg.grad_accum == 0:
+                self.scaler.unscale_(self.optimizer)
+                
+                ### REVISED ###
+                # Calculate grad norm before clipping
+                grad_norm = get_grad_norm(self.model.parameters())
+                running_metrics[3] += grad_norm.item()
+                grad_norm_steps += 1
+                
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+                
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad(set_to_none=True)
             
-            running_metrics += torch.tensor([loss.item(), rec_loss.item(), commit_loss.item()], device=self.device)
+            running_metrics[0] += loss.item()
+            running_metrics[1] += rec_loss.item()
+            running_metrics[2] += commit_loss.item()
         
         # Aggregate metrics across all processes
-        avg_metrics = reduce_mean(running_metrics) / len(self.train_loader)
+        avg_metrics = reduce_mean(running_metrics)
         
+        # Correctly average the accumulated values
+        num_batches = len(self.train_loader)
+        avg_loss = avg_metrics[0] / num_batches
+        avg_rec_loss = avg_metrics[1] / num_batches
+        avg_commit_loss = avg_metrics[2] / num_batches
+        avg_grad_norm = avg_metrics[3] / grad_norm_steps if grad_norm_steps > 0 else 0.0
+
+        ### REVISED ###
+        # Return a more detailed dictionary
         train_stats = {
-            'loss': avg_metrics[0].item(),
-            'reconstruction_loss': avg_metrics[1].item(),
-            'commitment_loss': avg_metrics[2].item()
+            'loss': avg_loss,
+            'reconstruction_loss': avg_rec_loss,
+            'commitment_loss': avg_commit_loss,
+            'grad_norm': avg_grad_norm
         }
         
         if is_main_process():
-            print(f"[Train][Epoch {epoch}] Loss: {train_stats['loss']:.4f}, Rec: {train_stats['reconstruction_loss']:.4f}, Commit: {train_stats['commitment_loss']:.4f}")
+            print(f"[Train][Epoch {epoch}] Loss: {train_stats['loss']:.4f}, Rec: {train_stats['reconstruction_loss']:.4f}, Commit: {train_stats['commitment_loss']:.4f}, GradNorm: {train_stats['grad_norm']:.4f}")
         
         return train_stats
 
     @torch.no_grad()
     def _evaluate(self, epoch):
         self.model.eval()
-        running_metrics = torch.zeros(2, device=self.device)  # [loss, iou]
+        ### REVISED ###
+        # Track more detailed loss components
+        running_metrics = torch.zeros(4, device=self.device)  # [loss, rec_loss, commit_loss, iou]
         
         data_iterator = self.val_loader
         if is_main_process():
@@ -130,21 +176,30 @@ class Trainer:
 
             with torch.amp.autocast('cuda', enabled=self.cfg.amp):
                 recon_logits, target, commit_loss, _ = self.model(x)
-                loss = self.rec_loss_fn(recon_logits, target) + self.cfg.beta_commit * commit_loss
+                rec_loss = self.rec_loss_fn(recon_logits, target)
+                loss = rec_loss + self.cfg.beta_commit * commit_loss
                 
-                # Convert to boolean voxels for IoU calculation
                 voxel_preds = multichannel_to_boolean(torch.sigmoid(recon_logits))
                 voxel_gt = multichannel_to_boolean(target)
                 iou = compute_iou(voxel_preds, voxel_gt)
             
-            running_metrics += torch.tensor([loss.item(), iou.item()], device=self.device)
+            ### REVISED ###
+            # Accumulate all relevant metrics
+            running_metrics += torch.tensor([loss.item(), rec_loss.item(), commit_loss.item(), iou.item()], device=self.device)
 
         avg_metrics = reduce_mean(running_metrics) / len(self.val_loader)
         
-        val_stats = {'loss': avg_metrics[0].item(), 'iou': avg_metrics[1].item()}
+        ### REVISED ###
+        # Return a more detailed dictionary for validation
+        val_stats = {
+            'loss': avg_metrics[0].item(),
+            'reconstruction_loss': avg_metrics[1].item(),
+            'commitment_loss': avg_metrics[2].item(),
+            'iou': avg_metrics[3].item()
+        }
         
         if is_main_process():
-            print(f"[Eval][Epoch {epoch}] Loss: {val_stats['loss']:.4f}, IoU: {val_stats['iou']:.4f}")
+            print(f"[Eval][Epoch {epoch}] Loss: {val_stats['loss']:.4f}, IoU: {val_stats['iou']:.4f}, Rec: {val_stats['reconstruction_loss']:.4f}, Commit: {val_stats['commitment_loss']:.4f}")
             
         return val_stats
 
@@ -185,11 +240,13 @@ class Trainer:
             train_metrics = self._train_one_epoch(epoch)
             val_metrics = self._evaluate(epoch)
             
-            barrier() # Sync before checkpointing and logging
+            barrier()
 
             if is_main_process():
                 if self.wandb_run:
-                    log_epoch_metrics(self.wandb_run, epoch, train_metrics, val_metrics)
+                    ### REVISED ###
+                    # Pass the optimizer to log learning rate
+                    log_epoch_metrics(self.wandb_run, epoch, train_metrics, val_metrics, self.optimizer)
                 
                 is_best = val_metrics['iou'] > self.best_iou
                 if is_best:

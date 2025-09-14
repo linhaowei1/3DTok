@@ -24,15 +24,15 @@ if [ -z "$NPROC_PER_NODE" ]; then
 fi
 
 # --- Training Hyperparameters ---
-EPOCHS=100
+EPOCHS=200
 BATCH_SIZE=2 # This is the batch size *per GPU*. Total batch size will be BATCH_SIZE * NPROC_PER_NODE.
-LEARNING_RATE=1e-4
+LEARNING_RATE=2e-4
 GRAD_ACCUM=1       # Gradient accumulation steps.
 AMP_ENABLED=true   # Set to false to disable Automatic Mixed Precision (adds --no-amp flag).
 
 # --- Model Parameters ---
 N_EMBED=512      # Number of embeddings in the codebook.
-EMBED_DIM=256     # Dimension of each embedding vector.
+EMBED_DIM=64     # Dimension of each embedding vector.
 VOXEL_SIZE=128
 
 # --- Logging and Checkpointing ---
@@ -47,7 +47,7 @@ WANDB_MODE="online"
 
 # --- Distributed Training Setup (for multi-node, otherwise defaults are fine) ---
 MASTER_ADDR="localhost"
-MASTER_PORT="29500"
+MASTER_PORT="29502"
 
 # --- SCRIPT LOGIC ---
 # Do not edit below this line unless you know what you are doing.
