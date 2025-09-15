@@ -17,7 +17,7 @@
 # --- CONFIGURATION ---
 # !!! IMPORTANT !!!
 # Set this to the path of the checkpoint file (.pt) you want to evaluate.
-CHECKPOINT_PATH="runs/shapenet_runs/ShapeNet_VQ_2025-09-14_21-05-38/checkpoints/best.pt"
+CHECKPOINT_PATH="runs/shapenet_runs/ShapeNet_VQ_2025-09-14_21-05-38/best.pt"
 
 # Set the GPU to use for evaluation.
 GPU_ID=0
@@ -60,7 +60,7 @@ echo "---------------------------"
 export CUDA_VISIBLE_DEVICES=$GPU_ID
 
 # Launch the evaluation script
-python eval.py \
+uv run python eval.py \
     --checkpoint="$CHECKPOINT_PATH" \
     --batch-size=$BATCH_SIZE \
     --num-workers=$NUM_WORKERS \

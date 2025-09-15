@@ -59,15 +59,16 @@ def main():
     )
 
     # --- 2. PREPARE DATASET ---
-    # Using the validation set for evaluation
+    train_set = ShapeNetVoxelDataset(split="train")
     val_set = ShapeNetVoxelDataset(split="val")
+
+    train_loader = DataLoader(
+        train_set, batch_size=cfg.batch_size,
+        num_workers=cfg.num_workers, pin_memory=True, drop_last=False
+    )
     val_loader = DataLoader(
-        val_set, 
-        batch_size=cfg.batch_size, 
-        shuffle=False, # No need to shuffle for evaluation
-        num_workers=cfg.num_workers, 
-        pin_memory=True, 
-        drop_last=False
+        val_set, batch_size=cfg.batch_size, 
+        num_workers=cfg.num_workers, pin_memory=True, drop_last=False
     )
     print(f"Loaded validation dataset with {len(val_set)} samples.")
 
@@ -82,16 +83,8 @@ def main():
     
     print(f"Loading checkpoint from: {cfg.checkpoint_path}")
     state_dict = torch.load(cfg.checkpoint_path, map_location="cpu")
+    state_dict = state_dict['model']
     
-    # Handle checkpoints saved with DistributedDataParallel (DDP) which have a "module." prefix
-    if any(key.startswith('module.') for key in state_dict.keys()):
-        print("DDP checkpoint detected. Removing 'module.' prefix from keys.")
-        new_state_dict = OrderedDict()
-        for k, v in state_dict.items():
-            name = k[7:] if k.startswith('module.') else k
-            new_state_dict[name] = v
-        state_dict = new_state_dict
-
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
@@ -101,11 +94,12 @@ def main():
     # Reconstruct point clouds from the validation set
     recon_pcs, gt_pcs = reconstruct_point_clouds(
         module=model,
-        recon_loader=val_loader,
-        gt_loader=val_loader, # For reconstruction, recon and gt loaders are the same
+        recon_loader=train_loader,
+        gt_loader=val_loader,
         cfg=cfg,
         device=device,
-        n_points=cfg.n_points
+        n_points=cfg.n_points,
+        forward_microbatch=args.batch_size
     )
 
     # Compute evaluation metrics

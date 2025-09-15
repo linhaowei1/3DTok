@@ -24,9 +24,9 @@ if [ -z "$NPROC_PER_NODE" ]; then
 fi
 
 # --- Training Hyperparameters ---
-EPOCHS=200
+EPOCHS=500
 BATCH_SIZE=2 # This is the batch size *per GPU*. Total batch size will be BATCH_SIZE * NPROC_PER_NODE.
-LEARNING_RATE=2e-4
+LEARNING_RATE=1e-4
 GRAD_ACCUM=1       # Gradient accumulation steps.
 AMP_ENABLED=false   # Set to false to disable Automatic Mixed Precision (adds --no-amp flag).
 

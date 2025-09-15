@@ -135,7 +135,8 @@ class VQModel3D(nn.Module):
         d, h, w = latent_res, latent_res, latent_res
         
         self.pos_embedding = nn.Parameter(torch.randn(1, embed_dim, d, h, w))
-        
+        self.ddconfig = ddconfig
+
         if ckpt_path is not None:
             self.init_from_ckpt(ckpt_path, ignore_keys=ignore_keys)
 
@@ -260,6 +261,41 @@ class VQModel3D(nn.Module):
         
         return multichannel_recon, multichannel_data, commit_loss, indices
 
+    @property
+    def latent_spatial_dim(self) -> int:
+        """Returns the spatial dimension (D, H, or W) of the latent grid."""
+        downsample_factor = 2**(len(self.ddconfig['ch_mult']) - 1)
+        latent_res = self.ddconfig['resolution'] // downsample_factor
+        return latent_res
+        
+    @torch.no_grad()
+    def get_tokens(self, x: torch.Tensor, reshape: bool = True):
+        """
+        Encodes an input tensor into discrete codebook indices (tokens).
+
+        Args:
+            x (torch.Tensor): Input boolean voxel tensor (B, 1, D, H, W).
+            reshape (bool): If True, reshapes the flat indices to their spatial
+                            grid form (B, D', H', W').
+
+        Returns:
+            torch.Tensor: A tensor of integer indices.
+            tuple[int, int, int]: The spatial shape of the latent grid (D', H', W').
+        """
+        # The VQ-VAE works on a multichannel representation
+        multichannel_data = boolean_to_multichannel(x)
+        
+        # Encode to get quantized vectors and indices
+        _, _, indices = self.encode(multichannel_data) # We only need the indices
+        
+        d = self.latent_spatial_dim
+        latent_shape = (d, d, d)
+
+        if reshape:
+            return indices.view(x.shape[0], *latent_shape), latent_shape
+        
+        return indices, latent_shape
+        
 def test_lossless_conversion():
     """
     Tests if the conversion from boolean -> multichannel -> boolean is lossless.
