@@ -12,16 +12,19 @@ def init_wandb(project_name, run_name=None, config=None, tags=None, notes=None, 
     Initializes a new wandb run.
     """
     mode = 'offline' if offline else 'online'
-    
-    run = wandb.init(
-        project=project_name,
-        name=run_name,
-        config=config,
-        tags=tags,
-        notes=notes,
-        mode=mode
-    )
-    return run
+    try:
+        run = wandb.init(
+            project=project_name,
+            name=run_name,
+            config=config,
+            tags=tags,
+            notes=notes,
+            mode=mode
+        )
+        return run
+    except Exception as e:
+        print(f" Could not initialize WandB logging: {e}")
+        return None
 
 ### REVISED ###
 # Updated function to log more detailed metrics
