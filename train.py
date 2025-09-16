@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--n-embed', type=int, default=512)
     parser.add_argument('--embed-dim', type=int, default=256)
     parser.add_argument('--resume', type=str, default=None, help='Path to checkpoint to resume training from')
+    parser.add_argument('--category', type=str, default='airplane', choices=['airplane', 'car', 'chair'], help='ShapeNet category to train on')
 
     # Wandb arguments
     parser.add_argument('--wandb-project', type=str, default='3DTok-ShapeNet')
@@ -51,11 +52,12 @@ def main():
         size=args.size, batch_size=args.batch_size, num_workers=args.num_workers,
         epochs=args.epochs, lr=args.lr, grad_accum=args.grad_accum,
         beta_commit=args.beta_commit, out_dir=args.out_dir, amp=not args.no_amp,
-        seed=args.seed, n_embed=args.n_embed, embed_dim=args.embed_dim
+        seed=args.seed, n_embed=args.n_embed, embed_dim=args.embed_dim,
+        category=args.category
     )
     
-    train_set = ShapeNetVoxelDataset(split="train")
-    val_set = ShapeNetVoxelDataset(split="val")
+    train_set = ShapeNetVoxelDataset(category=cfg.category, split="train")
+    val_set = ShapeNetVoxelDataset(category=cfg.category, split="val")
 
     train_sampler = DistributedSampler(train_set, shuffle=True, drop_last=False)
     val_sampler = DistributedSampler(val_set, shuffle=False, drop_last=False)
@@ -91,7 +93,7 @@ def main():
         wandb_config = cfg.__dict__
         wandb_config.update({
             'train_samples': len(train_set), 'val_samples': len(val_set),
-            'world_size': world_size
+            'world_size': world_size, 'category': cfg.category
         })
         wandb_run = init_wandb(
             project_name=args.wandb_project, run_name=args.wandb_name, config=wandb_config,

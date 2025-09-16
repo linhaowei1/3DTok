@@ -40,6 +40,7 @@ def main():
     parser.add_argument('--size', type=int, default=128, help='Voxel grid resolution.')
     parser.add_argument('--n-embed', type=int, default=512, help='Number of codebook embeddings.')
     parser.add_argument('--embed-dim', type=int, default=64, help='Dimension of codebook embeddings.')
+    parser.add_argument('--category', type=str, default='airplane', choices=['airplane', 'car', 'chair'], help='ShapeNet category to evaluate on')
 
     args = parser.parse_args()
 
@@ -59,8 +60,8 @@ def main():
     )
 
     # --- 2. PREPARE DATASET ---
-    train_set = ShapeNetVoxelDataset(split="train")
-    val_set = ShapeNetVoxelDataset(split="val")
+    train_set = ShapeNetVoxelDataset(category=args.category, split="train")
+    val_set = ShapeNetVoxelDataset(category=args.category, split="val")
 
     train_loader = DataLoader(
         train_set, batch_size=cfg.batch_size,

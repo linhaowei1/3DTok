@@ -24,7 +24,7 @@ if [ -z "$NPROC_PER_NODE" ]; then
 fi
 
 # --- Training Hyperparameters ---
-EPOCHS=500
+EPOCHS=200
 BATCH_SIZE=2 # This is the batch size *per GPU*. Total batch size will be BATCH_SIZE * NPROC_PER_NODE.
 LEARNING_RATE=1e-4
 GRAD_ACCUM=1       # Gradient accumulation steps.
@@ -32,8 +32,9 @@ AMP_ENABLED=false   # Set to false to disable Automatic Mixed Precision (adds --
 
 # --- Model Parameters ---
 N_EMBED=512      # Number of embeddings in the codebook.
-EMBED_DIM=64     # Dimension of each embedding vector.
+EMBED_DIM=16     # Dimension of each embedding vector.
 VOXEL_SIZE=128
+CATEGORY="airplane"  # ShapeNet category: airplane, car, or chair
 
 # --- Logging and Checkpointing ---
 # A unique run name is generated using the current date and time.
@@ -58,6 +59,7 @@ mkdir -p "$RUN_OUT_DIR"
 echo "--- Starting training run: $RUN_NAME ---"
 echo "Using $NPROC_PER_NODE GPUs per node."
 echo "Configuration:"
+echo "  - Category: $CATEGORY"
 echo "  - Epochs: $EPOCHS"
 echo "  - Per-GPU Batch Size: $BATCH_SIZE"
 echo "  - Total Batch Size: $(($BATCH_SIZE * $NPROC_PER_NODE))"
@@ -93,6 +95,7 @@ uv run python -m torch.distributed.run \
     --out-dir="$RUN_OUT_DIR" \
     --wandb-project="$WANDB_PROJECT" \
     --wandb-name="$RUN_NAME" \
+    --category="$CATEGORY" \
     $AMP_FLAG
 
 echo "--- Training run $RUN_NAME finished. ---"

@@ -1,3 +1,5 @@
+# model/model.py
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -121,11 +123,14 @@ class VQModel3D(nn.Module):
             dim=embed_dim,
             codebook_size=n_embed,
             decay=0.8,
-            commitment_weight=.25,
+            commitment_weight=.5,
             channel_last=True,
         )
         
         self.total_codebook_size = n_embed + 1 if self.use_replacement else n_embed
+        
+        self.register_buffer('codebook_usage', torch.zeros(n_embed))
+
         self.replacement_idx = 0 if self.use_replacement else -1
         if self.use_replacement:
             self.replacement_token = nn.Parameter(torch.randn(1, embed_dim) * 0.02)
@@ -188,6 +193,12 @@ class VQModel3D(nn.Module):
             with torch.amp.autocast('cuda', enabled=False):
                 quant_seq, indices, commit_loss_out = self.quantize(seq.float())
                 commit_loss = commit_loss_out.mean()
+
+            if self.training:
+                with torch.no_grad():
+                    usage_counts = torch.bincount(indices.flatten(), minlength=self.quantize.codebook_size)
+                    self.codebook_usage.add_(usage_counts)
+
             quant = self._unflatten_spatial(quant_seq.to(h.dtype), dhw)
             return quant, commit_loss, indices
 
@@ -211,6 +222,11 @@ class VQModel3D(nn.Module):
             seq_nonzero = seq[nonzero_mask_flat].float().view(-1, self.embed_dim)
             quant_seq_nonzero, indices_nonzero, commit_loss_out = self.quantize(seq_nonzero)
             commit_loss = commit_loss_out.mean() * non_mask_frac
+
+        if self.training:
+            with torch.no_grad():
+                usage_counts = torch.bincount(indices_nonzero.flatten(), minlength=self.quantize.codebook_size)
+                self.codebook_usage.add_(usage_counts)
 
         full_indices = torch.full((seq.shape[0], seq.shape[1]),
                                 self.replacement_idx, dtype=torch.long, device=seq.device)
@@ -295,7 +311,20 @@ class VQModel3D(nn.Module):
             return indices.view(x.shape[0], *latent_shape), latent_shape
         
         return indices, latent_shape
-        
+    
+    @torch.no_grad()
+    def get_codebook_usage(self):
+        """
+        Returns the current codebook usage counts. In a DDP setup, this
+        should be summed across all processes.
+        """
+        return self.codebook_usage.clone()
+
+    @torch.no_grad()
+    def reset_codebook_usage(self):
+        """Resets the codebook usage counter to zero."""
+        self.codebook_usage.zero_()
+
 def test_lossless_conversion():
     """
     Tests if the conversion from boolean -> multichannel -> boolean is lossless.

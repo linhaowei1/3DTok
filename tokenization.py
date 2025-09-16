@@ -30,7 +30,8 @@ def tokenize_split(model, loader, device, output_file):
     
     print(f"Tokenizing {len(loader.dataset)} samples...")
     for batch in tqdm(loader):
-        voxels = batch['voxel'].to(device)
+        voxels, _ = batch  # Dataset returns (input, target) tuple
+        voxels = voxels.to(device)
         
         # Get the token indices for the current batch
         # The new get_tokens method handles the conversion and encoding
@@ -63,17 +64,25 @@ def verify_detokenization(model, original_dataset, tokens_path, latent_shape, de
 
     token_subset = torch.from_numpy(saved_tokens[:num_samples]).long().to(device)
     
+    # --- FIX STARTS HERE ---
+    # Reshape the tokens from spatial format (e.g., 4, 16, 16, 16) to a
+    # flattened sequence (e.g., 4, 4096) that the decoder expects.
+    if token_subset.dim() > 2:
+        token_subset = token_subset.view(token_subset.size(0), -1)
+    # --- FIX ENDS HERE ---
+
     # 2. Decode the tokens back into voxel representation
     print(f"Decoding {num_samples} samples using model.decode_code...")
     with torch.no_grad():
         # Use the model's decode_code method
         recon_multichannel = model.decode_code(token_subset, shape=latent_shape)
+        recon_multichannel = torch.sigmoid(recon_multichannel)
         # Convert back to boolean voxels
         recon_voxels = multichannel_to_boolean(recon_multichannel)
 
     # 3. Load the corresponding original samples
     print("Loading original voxels for comparison...")
-    original_voxels = torch.stack([original_dataset[i]['voxel'] for i in range(num_samples)]).to(device)
+    original_voxels = torch.stack([original_dataset[i][0] for i in range(num_samples)]).to(device)  # Get input voxels
 
     # 4. Compare
     are_equal = torch.equal(original_voxels, recon_voxels)
@@ -89,7 +98,6 @@ def verify_detokenization(model, original_dataset, tokens_path, latent_shape, de
 
     print("--------------------------\n")
 
-
 def main():
     parser = argparse.ArgumentParser(description="Tokenize the ShapeNet dataset using a pre-trained VQModel3D.")
     
@@ -97,12 +105,13 @@ def main():
     parser.add_argument('--checkpoint', type=str, required=True, help='Path to the model checkpoint (.pt file).')
     parser.add_argument('--out-dir', type=str, required=True, help='Directory to save the tokenized .npy files.')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size for tokenization.')
-    parser.add_argument('--num-workers', type=int, default=8, help='Number of workers for the DataLoader.')
+    parser.add_argument('--num-workers', type=int, default=16, help='Number of workers for the DataLoader.')
     
     # --- Model Arguments (must match the trained model) ---
     parser.add_argument('--size', type=int, default=128, help='Voxel grid resolution.')
     parser.add_argument('--n-embed', type=int, default=512, help='Number of codebook embeddings.')
     parser.add_argument('--embed-dim', type=int, default=64, help='Dimension of codebook embeddings.')
+    parser.add_argument('--category', type=str, default='airplane', choices=['airplane', 'car', 'chair'], help='ShapeNet category to tokenize')
 
     args = parser.parse_args()
 
@@ -127,8 +136,8 @@ def main():
     print("Model loaded successfully.")
 
     # --- 3. PREPARE DATASETS ---
-    train_set = ShapeNetVoxelDataset(split="train")
-    val_set = ShapeNetVoxelDataset(split="val")
+    train_set = ShapeNetVoxelDataset(category=args.category, split="train")
+    val_set = ShapeNetVoxelDataset(category=args.category, split="val")
 
     train_loader = DataLoader(
         train_set, batch_size=args.batch_size, shuffle=False, # No need to shuffle for tokenization

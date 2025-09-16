@@ -17,7 +17,7 @@
 # --- CONFIGURATION ---
 # !!! IMPORTANT !!!
 # Set this to the path of the checkpoint file (.pt) you want to evaluate.
-CHECKPOINT_PATH="runs/shapenet_runs/ShapeNet_VQ_2025-09-14_21-05-38/best.pt"
+CHECKPOINT_PATH="runs/shapenet_runs/ShapeNet_VQ_2025-09-15_13-35-42/best.pt"
 
 # Set the GPU to use for evaluation.
 GPU_ID=0
@@ -32,6 +32,7 @@ N_POINTS=2048      # Number of points to sample for metrics calculation.
 VOXEL_SIZE=128
 N_EMBED=512
 EMBED_DIM=64
+CATEGORY="airplane"  # ShapeNet category: airplane, car, or chair
 
 # --- SCRIPT LOGIC ---
 # Do not edit below this line.
@@ -50,6 +51,7 @@ mkdir -p "$OUT_DIR"
 
 echo "--- Starting Evaluation ---"
 echo "GPU ID:          $GPU_ID"
+echo "Category:        $CATEGORY"
 echo "Checkpoint:      $CHECKPOINT_PATH"
 echo "Batch Size:      $BATCH_SIZE"
 echo "Output Dir:      $OUT_DIR"
@@ -68,6 +70,7 @@ uv run python eval.py \
     --out-dir="$OUT_DIR" \
     --size=$VOXEL_SIZE \
     --n-embed=$N_EMBED \
-    --embed-dim=$EMBED_DIM
+    --embed-dim=$EMBED_DIM \
+    --category="$CATEGORY"
 
 echo "--- Evaluation Finished. Results saved in $OUT_DIR ---"

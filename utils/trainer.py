@@ -1,4 +1,4 @@
-# training/trainer.py
+# utils/trainer.py
 
 import os
 import torch
@@ -136,6 +136,17 @@ class Trainer:
             running_metrics[1] += rec_loss.item()
             running_metrics[2] += commit_loss.item()
         
+        # --- Codebook Usage Aggregation ---
+        barrier() # Ensure all processes have finished the epoch's training steps
+        # Get usage counts from the local model replica
+        local_codebook_usage = self.model.module.get_codebook_usage()
+        # Sum the usage counts across all DDP processes
+        torch.distributed.all_reduce(local_codebook_usage, op=torch.distributed.ReduceOp.SUM)
+        # Now, `local_codebook_usage` on all processes holds the total usage for the epoch
+        total_usage = local_codebook_usage.cpu()
+        active_codes = (total_usage > 0).sum().item()
+        percent_active = (active_codes / total_usage.numel()) * 100 if total_usage.numel() > 0 else 0.0
+
         # Aggregate metrics across all processes
         avg_metrics = reduce_mean(running_metrics)
         
@@ -146,17 +157,17 @@ class Trainer:
         avg_commit_loss = avg_metrics[2] / num_batches
         avg_grad_norm = avg_metrics[3] / grad_norm_steps if grad_norm_steps > 0 else 0.0
 
-        ### REVISED ###
-        # Return a more detailed dictionary
         train_stats = {
             'loss': avg_loss,
             'reconstruction_loss': avg_rec_loss,
             'commitment_loss': avg_commit_loss,
-            'grad_norm': avg_grad_norm
+            'grad_norm': avg_grad_norm,
+            'codebook_usage': total_usage,
+            'active_codes_percent': percent_active
         }
         
         if is_main_process():
-            print(f"[Train][Epoch {epoch}] Loss: {train_stats['loss']:.4f}, Rec: {train_stats['reconstruction_loss']:.4f}, Commit: {train_stats['commitment_loss']:.4f}, GradNorm: {train_stats['grad_norm']:.4f}")
+            print(f"[Train][Epoch {epoch}] Loss: {train_stats['loss']:.4f}, Rec: {train_stats['reconstruction_loss']:.4f}, Commit: {train_stats['commitment_loss']:.4f}, GradNorm: {train_stats['grad_norm']:.4f}, Codebook Usage: {train_stats['active_codes_percent']:.2f}%")
         
         return train_stats
 
@@ -234,6 +245,9 @@ class Trainer:
 
     def train(self):
         for epoch in range(self.start_epoch, self.cfg.epochs + 1):
+
+            self.model.module.reset_codebook_usage()
+            
             self.train_sampler.set_epoch(epoch)
             self.val_sampler.set_epoch(epoch)
 

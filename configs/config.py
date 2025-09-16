@@ -20,3 +20,4 @@ class TrainConfig:
     seed: int = 0
     n_embed: int = 1024
     embed_dim: int = 64
+    category: str = "airplane"
