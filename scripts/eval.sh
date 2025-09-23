@@ -17,7 +17,7 @@
 # --- CONFIGURATION ---
 # !!! IMPORTANT !!!
 # Set this to the path of the checkpoint file (.pt) you want to evaluate.
-CHECKPOINT_PATH="runs/shapenet_runs/ShapeNet_VQ_2025-09-15_13-35-42/best.pt"
+CHECKPOINT_PATH="runs/shapenet_runs/ShapeNet_VQ_2025-09-20_22-03-23/best.pt"
 
 # Set the GPU to use for evaluation.
 GPU_ID=0
@@ -29,10 +29,10 @@ N_POINTS=2048      # Number of points to sample for metrics calculation.
 
 # --- Model Parameters ---
 # These parameters MUST match the parameters used to train the model specified in CHECKPOINT_PATH.
+N_EMBED=512      # Number of embeddings in the codebook.
+EMBED_DIM=256     # Dimension of each embedding vector.
 VOXEL_SIZE=128
-N_EMBED=512
-EMBED_DIM=64
-CATEGORY="airplane"  # ShapeNet category: airplane, car, or chair
+CATEGORY="chair"  # ShapeNet category: airplane, car, or chair
 
 # --- SCRIPT LOGIC ---
 # Do not edit below this line.

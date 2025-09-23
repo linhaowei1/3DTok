@@ -32,9 +32,9 @@ AMP_ENABLED=false   # Set to false to disable Automatic Mixed Precision (adds --
 
 # --- Model Parameters ---
 N_EMBED=512      # Number of embeddings in the codebook.
-EMBED_DIM=16     # Dimension of each embedding vector.
+EMBED_DIM=256     # Dimension of each embedding vector.
 VOXEL_SIZE=128
-CATEGORY="airplane"  # ShapeNet category: airplane, car, or chair
+CATEGORY="chair"  # ShapeNet category: airplane, car, or chair
 
 # --- Logging and Checkpointing ---
 # A unique run name is generated using the current date and time.

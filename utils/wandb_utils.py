@@ -51,7 +51,10 @@ def log_epoch_metrics(run, epoch, train_metrics, val_metrics, optimizer):
         # Filter for codes that were used (count > 0)
         used_codes_counts = codebook_usage_counts[codebook_usage_counts > 0]
         if used_codes_counts.numel() > 0:
-            metrics_to_log['train/codebook_usage_hist'] = wandb.Histogram(used_codes_counts.numpy())
+            try:
+                metrics_to_log['train/codebook_usage_hist'] = wandb.Histogram(used_codes_counts.numpy())
+            except:
+                print("ERROR IN LOGGING HISTROGRAM")
 
     run.log(metrics_to_log)
 

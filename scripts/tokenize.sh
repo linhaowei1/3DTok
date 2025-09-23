@@ -3,16 +3,16 @@ set -e # Exit immediately if a command exits with a non-zero status.
 
 # --- Configuration ---
 # Set the path to your trained model checkpoint
-CHECKPOINT_PATH="runs/shapenet_runs/ShapeNet_VQ_2025-09-16_11-39-11/best.pt"
+CHECKPOINT_PATH="runs/shapenet_runs/ShapeNet_VQ_2025-09-17_15-07-37/best.pt"
 
 # Set the directory where you want to save the token files
 OUTPUT_DIR="./storage/tokenized_data"
 
 # Model parameters (must match the trained model)
+N_EMBED=512      # Number of embeddings in the codebook.
+EMBED_DIM=256     # Dimension of each embedding vector.
 SIZE=128
-N_EMBED=512
-EMBED_DIM=64
-CATEGORY="car"  # ShapeNet category: airplane, car, or chair
+CATEGORY="airplane"  # ShapeNet category: airplane, car, or chair
 
 # --- Script ---
 echo "Starting dataset tokenization..."
